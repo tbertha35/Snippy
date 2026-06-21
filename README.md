@@ -200,4 +200,4 @@ You can drop `.snip` files in Google Drive, OneDrive, iCloud, a USB stick, an em
 
 ## 📜 License
 
-[MIT](LICENSE) — do whatever you want, just don't blame me.
+This software is provided for personal evaluation and visibility. Complete source code is public, but unauthorized distribution or modification is prohibited.
