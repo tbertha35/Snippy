@@ -5,11 +5,6 @@
 
 > 🆕 **Easy install & uninstall** — installers for Windows / macOS / Linux, no Python required. No CLI needed for backup/restore — it’s all in the app. You’ll always *see* Snippy catch a copy with a subtle toast + tray icon flash.
 
-[![Status](https://img.shields.io/badge/status-v0.3.0--shipped-brightgreen)]()
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
-[![Qt](https://img.shields.io/badge/Qt-PySide6-green)]()
-[![License: MIT](https://img.shields.io/badge/license-MIT-purple)]()
-
 
 Snippy watches your clipboard, stores everything in a local SQLite database, and pops up a slick command-palette (`Ctrl+Space`) whenever you need to recall something you copied. It's local-first, private, and extensible.
 
