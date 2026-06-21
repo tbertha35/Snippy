@@ -1,0 +1,3 @@
+# Marker file (PEP 561) declaring that the `snippy` package ships inline
+# type annotations and supports type checking by downstream tools (mypy,
+# pyright, etc.). The file is intentionally empty -- its presence is the signal.

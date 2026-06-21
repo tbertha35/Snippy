@@ -1,0 +1,13 @@
+# Runtime dependencies for Snippy.
+# For dev/test tooling (pytest, ruff, mypy, pre-commit, etc.) see
+# the [project.optional-dependencies.dev] block in pyproject.toml.
+
+PySide6>=6.6,<7
+rapidfuzz>=3.6,<4
+cryptography>=42,<46
+platformdirs>=4.2,<5
+pynput>=1.7,<2
+# Global hotkey support:
+# - Windows: native Win32 API via ctypes.
+# - Linux/macOS: pynput global listener (requires X11 on Linux;
+#   macOS requires Accessibility permission).

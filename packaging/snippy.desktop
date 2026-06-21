@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Snippy
+GenericName=Clipboard Manager
+Comment=Smart clipboard & snippet manager that lives in your system tray
+Exec=Snippy %u
+Icon=snippy
+Terminal=false
+Categories=Utility;TextTools;Office;
+Keywords=clipboard;snapshot;clip;manager;snippet;paste;tray;
+StartupNotify=false
+StartupWMClass=Snippy
+MimeType=application/x-snip;

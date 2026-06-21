@@ -1,0 +1,302 @@
+# ============================================================================
+# .github/workflows/release.yml — Cross-platform Snippy build & release
+# ============================================================================
+#
+# Triggers:
+#   - manual (workflow_dispatch)
+#   - push to main (smoke check; also uploads artifacts for testing)
+#   - GitHub Release "published" event (attaches the installers to the Release)
+#
+# Mirrors the shape of the Tauri reference workflow the user already had
+# for their silo-desktop project, but for Python + PyInstaller instead of
+# Rust + Tauri.
+#
+# Result on a successful `git push origin v0.3.0` (after publishing the
+# GitHub Release from the tag):
+#
+#   * Snippy-Setup-0.3.0.exe         (Windows installer)
+#   * Snippy-0.3.0-portable.zip      (Windows portable)
+#   * Snippy-0.3.0.dmg               (macOS, native arch)
+#   * Snippy-0.3.0-x86_64.AppImage   (Linux portable)
+#   * snippy_0.3.0_amd64.deb         (Linux Debian/Ubuntu)
+#
+# …all attached to the GitHub Release page automatically, with the
+# release body populated from CHANGELOG.md.
+#
+# The first job in each matrix also runs `pytest -q` so we don't
+# publish a binary of a broken test suite.
+# ============================================================================
+
+name: 'Cross-Platform Build'
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'snippy/**'
+      - 'packaging/**'
+      - '.github/workflows/release.yml'
+      - 'requirements.txt'
+      - 'pyproject.toml'
+  release:
+    types: [published]
+
+# Cancel in-flight runs of this same workflow on a new push to main.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+# Default perms: read-only on the repo. The release job upgrades to
+# `contents: write` so it can attach artifacts to the GitHub Release.
+permissions:
+  contents: read
+
+jobs:
+  # --------------------------------------------------------------------------
+  # WINDOWS
+  # --------------------------------------------------------------------------
+  build-windows:
+    name: 'Build (windows-latest)'
+    runs-on: windows-latest
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v4
+
+      - name: 'Setup Python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            pyproject.toml
+
+      - name: 'Install Python deps'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install .
+          pip install pyinstaller==6.*
+
+      - name: 'Run tests'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        shell: bash
+        run: |
+          # pytest lives in [project.optional-dependencies].dev in pyproject.toml,
+          # not in requirements.txt, so it has to be installed explicitly.
+          # (The runtime + snippy itself are installed in the step above.)
+          python -m pip install pytest pytest-cov
+          # `tests/` (not `snippy/tests/`) — path updated after the repo flatten
+          # commit moved tests/ from inside the package to the repo root.
+          python -m pytest tests/ -q --tb=short
+
+      - name: 'Install Inno Setup 6'
+        # Inno Setup is shipped with windows-latest runners, but the exact
+        # version changes over time. This step only installs via choco if
+        # ISCC.exe is not already present at the standard paths.
+        shell: bash
+        run: |
+          if [ -f "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" ] || [ -f "/c/Program Files/Inno Setup 6/ISCC.exe" ]; then
+            echo "Inno Setup already installed"
+          else
+            choco install innosetup -y --no-progress
+          fi
+
+      - name: 'Build installer + portable .zip'
+        shell: cmd
+        run: |
+          packaging\build_windows.bat
+        env:
+          # The build script reads this from snippy/__init__.py; we keep it
+          # for the ISCC step's /DSnippyVersion flag.
+          SNIPPY_VERSION: ${{ github.ref_name }}
+
+      - name: 'List dist/'
+        shell: bash
+        run: ls -lh dist
+
+      - name: 'Upload Windows artifacts'
+        uses: actions/upload-artifact@v4
+        with:
+          name: snippy-windows
+          path: |
+            dist/Snippy-Setup-*.exe
+            dist/Snippy-*-portable.zip
+            dist/Snippy.exe
+            dist/Snippy/
+          if-no-files-found: error
+          retention-days: 14
+
+  # --------------------------------------------------------------------------
+  # MACOS
+  # --------------------------------------------------------------------------
+  build-macos:
+    name: 'Build (macos-latest)'
+    runs-on: macos-latest
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v4
+
+      - name: 'Setup Python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            pyproject.toml
+
+      - name: 'Install Python deps'
+        run: |
+          python3 -m pip install --upgrade pip
+          # --break-system-packages is harmless on the ephemeral CI runner
+          # (there's no real system Python to break). Required by some
+          # Python 3.12 pip versions on macOS runners.
+          pip3 install --break-system-packages -r requirements.txt
+          pip3 install --break-system-packages .
+          pip3 install --break-system-packages pyinstaller==6.*
+
+      - name: 'Run tests'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          # pytest lives in [project.optional-dependencies].dev in pyproject.toml,
+          # not in requirements.txt, so it has to be installed explicitly.
+          # (The runtime + snippy itself are installed in the step above.)
+          python3 -m pip install --break-system-packages pytest pytest-cov
+          # `tests/` (not `snippy/tests/`) — path updated after the repo flatten
+          # commit moved tests/ from inside the package to the repo root.
+          python3 -m pytest tests/ -q --tb=short
+
+      - name: 'Build .app + .dmg'
+        env:
+          ARCH: arm64   # default to Apple Silicon runners; can be overridden to universal2
+          # Uncomment + set repo secrets to enable code-signing + notarization:
+          # CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          # NOTARYTOOL_PROFILE: ${{ secrets.MACOS_NOTARYTOOL_PROFILE }}
+        run: |
+          chmod +x packaging/build_macos.sh
+          packaging/build_macos.sh
+
+      - name: 'Upload macOS artifacts'
+        uses: actions/upload-artifact@v4
+        with:
+          name: snippy-macos
+          path: |
+            dist/Snippy-*.dmg
+            dist/Snippy.app
+          if-no-files-found: error
+          retention-days: 14
+
+  # --------------------------------------------------------------------------
+  # LINUX
+  # --------------------------------------------------------------------------
+  build-linux:
+    name: 'Build (ubuntu-latest)'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v4
+
+      - name: 'Setup Python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            pyproject.toml
+
+      - name: 'Install Linux build deps'
+        # Qt/X11 runtime libs PySide6 needs at runtime, plus fakeroot for the .deb
+        # qt6-base-dev provides /usr/bin/qmake, which linuxdeploy-plugin-qt needs
+        # to find the Qt installation when bundling the AppImage.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+              libxcb-xinerama0 libxkbcommon-x11-0 libxcb-cursor0 \
+              libgl1 libegl1 fonts-dejavu \
+              libpulse0 \
+              qt6-base-dev \
+              fakeroot dpkg wget
+
+      - name: 'Install Python deps'
+        run: |
+          python3 -m pip install --upgrade pip
+          pip3 install -r requirements.txt
+          pip3 install .
+          pip3 install pyinstaller==6.*
+
+      - name: 'Run tests'
+        env:
+          QT_QPA_PLATFORM: offscreen
+          # PySide6 on Linux looks for fonts here when the system fonts aren't
+          # discoverable; the apt-get above installs the dejavu family to this
+          # path on Ubuntu.
+          QT_QPA_FONTDIR: /usr/share/fonts/truetype/dejavu
+        run: |
+          # pytest lives in [project.optional-dependencies].dev in pyproject.toml,
+          # not in requirements.txt, so it has to be installed explicitly.
+          # (The runtime + snippy itself are installed in the step above.)
+          python3 -m pip install pytest pytest-cov
+          # `tests/` (not `snippy/tests/`) — path updated after the repo flatten
+          # commit moved tests/ from inside the package to the repo root.
+          python3 -m pytest tests/ -q --tb=short
+
+      - name: 'Build AppImage + .deb'
+        env:
+          # linuxdeploy + its plugins need this to extract themselves on first run
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: |
+          chmod +x packaging/build_linux.sh
+          packaging/build_linux.sh
+
+      - name: 'Upload Linux artifacts'
+        uses: actions/upload-artifact@v4
+        with:
+          name: snippy-linux
+          path: |
+            dist/Snippy-*.AppImage
+            dist/snippy_*.deb
+          if-no-files-found: error
+          retention-days: 14
+
+  # --------------------------------------------------------------------------
+  # RELEASE — runs after all 3 builds finish. Only fires on a real
+  # GitHub Release publication (push to main doesn't trigger it).
+  # --------------------------------------------------------------------------
+  release:
+    name: 'Attach to GitHub Release'
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    permissions:
+      contents: write   # required to upload release assets
+    steps:
+      - name: 'Download all artifacts'
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 'Show what we got'
+        run: |
+          echo "=== Windows ==="
+          ls -lh artifacts/snippy-windows/ || true
+          echo "=== macOS ==="
+          ls -lh artifacts/snippy-macos/ || true
+          echo "=== Linux ==="
+          ls -lh artifacts/snippy-linux/ || true
+
+      - name: 'Publish to GitHub Release'
+        uses: softprops/action-gh-release@v2
+        with:
+          # Pull the body from CHANGELOG.md (the first H2 = the latest version)
+          body_path: CHANGELOG.md
+          # Attach everything; the action is lenient if some patterns miss
+          fail_on_unmatched_files: false
+          files: |
+            artifacts/snippy-windows/**
+            artifacts/snippy-macos/**
+            artifacts/snippy-linux/**

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- We need the JIT to run Python code at normal speed. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <!-- We need to load unsigned executable pages (Python extensions, PySide6 Qt plugins). -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- We need to read & write the user's clipboard (the whole point of the app). -->
+    <key>com.apple.security.device.clipboard</key>
+    <true/>
+    <!-- We need to register a global hotkey to summon the palette. -->
+    <key>com.apple.security.device.input-monitoring</key>
+    <true/>
+    <!-- We need to capture the screen for the screen-region snippet feature. -->
+    <key>com.apple.security.device.screen-capture</key>
+    <true/>
+    <!-- We need a network client for the voice-assistant HTTP API (Phase 7). -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <!-- We need a network server to expose the voice-assistant HTTP API (Phase 7). -->
+    <key>com.apple.security.network.server</key>
+    <true/>
+    <!-- App Sandbox is OFF so we can read .snip files from anywhere on disk
+         and write backups wherever the user picks. This is the right call
+         for a user-tray utility; we are not sandboxed as a Mac App Store app. -->
+</dict>
+</plist>
